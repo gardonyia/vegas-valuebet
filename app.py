@@ -82,35 +82,39 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
                             p = json.loads(p)
                         except Exception:
                             p = {}
+
+                    # Debug log az első bethez
+                    if len(bets) == 0:
+                        st.session_state.log.append(f"🔍 p típus: {type(p).__name__} | p tartalom: {str(p)[:200]}")
+                        st.session_state.log.append(f"🔍 data kulcsok: {list(data.keys())}")
+
                     teams = data.get("teams", [])
                     event = " – ".join(teams) if teams else str(data.get("synonym_id", ""))
-
-                    # Market összerakása a dict mezőkből
-                    mkt = p.get("market", {})
-                    if isinstance(mkt, dict):
-                        variety  = mkt.get("variety", "")
-                        base     = mkt.get("base", "")
-                        type_    = mkt.get("type", "")
-                        cond     = mkt.get("condition", "")
-                        parts = [x for x in [variety, base, type_, cond] if x]
-                        market = " / ".join(parts) if parts else str(mkt)
-                    elif isinstance(mkt, str) and mkt:
-                        market = mkt
-                    else:
-                        market = p.get("market_name", p.get("type", p.get("name", "–")))
-                    # initial_value lehet dict {"datetime":..., "value":1.87} vagy szám
-                    iv = p.get("initial_value", p.get("value", 0))
-                    if isinstance(iv, dict):
-                        odds = safe_float(iv.get("value", 0))
-                    else:
-                        odds = safe_float(iv)
-                    prob = round(1 / odds * 100, 1) if odds > 0 else 0
                     tournament = data.get("tournament", "")
-                    bet_uid = str(data.get("id", bet_id({"event": event, "market": market, "odds": odds})))
-                    start_time = ""
-                    iv2 = p.get("initial_value", {})
-                    if isinstance(iv2, dict):
-                        start_time = iv2.get("datetime", "")[:16]
+
+                    # Market összerakása
+                    if isinstance(p, dict):
+                        mkt = p.get("market", {})
+                        if isinstance(mkt, dict):
+                            parts = [x for x in [mkt.get("variety",""), mkt.get("base",""), mkt.get("type",""), mkt.get("condition","")] if x]
+                            market = " / ".join(parts) if parts else "–"
+                        elif isinstance(mkt, str) and mkt:
+                            market = mkt
+                        else:
+                            market = "–"
+                        # Odds kinyerése
+                        iv = p.get("initial_value", p.get("value", 0))
+                        odds = safe_float(iv.get("value", 0)) if isinstance(iv, dict) else safe_float(iv)
+                        # Időpont
+                        iv2 = p.get("initial_value", {})
+                        start_time = iv2.get("datetime", "")[:16] if isinstance(iv2, dict) else ""
+                    else:
+                        market = "–"
+                        odds = 0.0
+                        start_time = ""
+
+                    prob = round(1 / odds * 100, 1) if odds > 0 else 0
+                    bet_uid = str(data.get("id", f"{event}_{odds}"))
                 else:
                     # Fallback: cellákból
                     cells = row.find_all("td")
@@ -177,10 +181,6 @@ def format_msg(bet: dict) -> str:
     tournament = bet.get("tournament", "")
     emoji = "🔥🔥🔥" if ov >= 20 else ("🔥🔥" if ov >= 10 else "🔥")
 
-    # Vegas.hu keresőlink a csapatnevekből
-    search_query = event.replace(" – ", " ").replace(" ", "+")
-    vegas_link = f"https://vegas.hu/search?q={search_query}"
-
     return (
         f"{emoji} *VEGAS.HU VALUEBET*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -193,7 +193,7 @@ def format_msg(bet: dict) -> str:
         f"📈 *Overvalue:* `+{ov}%`\n"
         f"🎯 *Valószínűség:* `{prob}%`\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🔗 [Megnyitás Vegas.hu-n]({vegas_link})\n"
+        f"🔗 [Vegas.hu](https://vegas.hu)\n"
         f"_{datetime.now().strftime('%H:%M:%S')}_"
     )
 
