@@ -35,7 +35,7 @@ if "log"         not in st.session_state: st.session_state.log         = []
 
 def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
     from bs4 import BeautifulSoup
-    import re
+    import re, json, html
     try:
         r = requests.get(SUREBET_URL, cookies=COOKIES, headers=HEADERS, timeout=15)
         st.session_state.log.append(f"🌐 HTTP: {r.status_code} | méret: {len(r.text)} karakter")
@@ -46,60 +46,57 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
         soup = BeautifulSoup(r.text, "html.parser")
         bets = []
 
-        # Minden sor a táblázatban
-        rows = soup.select("tr.vb-row, tr[data-id], tbody tr")
+        rows = soup.select("tbody tr")
         st.session_state.log.append(f"📋 Talált sorok: {len(rows)}")
 
         for row in rows:
             try:
-                cells = row.find_all("td")
-                if len(cells) < 4:
-                    continue
-
                 # Overvalue kinyerése
-                ov_cell = row.select_one(".overvalue, [class*='overvalue'], td:first-child")
-                ov_text = ov_cell.get_text(strip=True) if ov_cell else cells[0].get_text(strip=True)
-                ov = safe_float(re.sub(r'[^0-9.]', '', ov_text))
-
-                # Esemény
-                event_cell = row.select_one(".event, [class*='event'], td:nth-child(3)")
-                event = event_cell.get_text(strip=True) if event_cell else cells[2].get_text(strip=True) if len(cells) > 2 else ""
-
-                # Piac
-                market_cell = row.select_one(".market, [class*='market'], td:nth-child(4)")
-                market = market_cell.get_text(strip=True) if market_cell else cells[3].get_text(strip=True) if len(cells) > 3 else ""
-
-                # Odds
-                odds_cell = row.select_one(".odds, [class*='odds'], td:nth-child(5)")
-                odds_text = odds_cell.get_text(strip=True) if odds_cell else cells[4].get_text(strip=True) if len(cells) > 4 else "0"
-                odds = safe_float(re.sub(r'[^0-9.]', '', odds_text))
-
-                # Valószínűség
-                prob_cell = row.select_one(".probability, [class*='prob'], td:nth-child(6)")
-                prob_text = prob_cell.get_text(strip=True) if prob_cell else cells[5].get_text(strip=True) if len(cells) > 5 else "0"
-                prob = safe_float(re.sub(r'[^0-9.]', '', prob_text))
-
-                # Időpont
-                time_cell = row.select_one(".time, [class*='time'], td:nth-child(2)")
-                start_time = time_cell.get_text(strip=True) if time_cell else ""
-
-                if ov == 0 and odds == 0:
+                ov_el = row.select_one(".overvalue-box, [class*='overvalue']")
+                if not ov_el:
                     continue
+                ov = safe_float(re.sub(r'[^0-9.]', '', ov_el.get_text(strip=True)))
 
-                bet = {
-                    "overvalue":   ov,
-                    "event":       event[:80],
-                    "market":      market[:60],
-                    "odds":        odds,
-                    "probability": prob,
-                    "time":        start_time,
-                }
+                # data-comb-json attribútumból az adatok
+                comb_el = row.select_one("[data-comb-json]")
+                if comb_el:
+                    raw = html.unescape(comb_el["data-comb-json"])
+                    data = json.loads(raw)
+                    prongs = data.get("prongs", [{}])
+                    p = prongs[0] if prongs else {}
+                    teams = data.get("teams", [])
+                    event = " – ".join(teams) if teams else data.get("synonym_id", "")
+                    market = p.get("market_name", p.get("market", ""))
+                    odds = safe_float(p.get("value", p.get("initial_value", 0)))
+                    prob = round(1 / odds * 100, 1) if odds > 0 else 0
+                    tournament = data.get("tournament", "")
+                    start_time = data.get("datetime", "")[:16] if data.get("datetime") else ""
+                else:
+                    # Fallback: cellákból
+                    cells = row.find_all("td")
+                    if len(cells) < 4:
+                        continue
+                    event  = cells[2].get_text(strip=True)[:80]
+                    market = cells[3].get_text(strip=True)[:60]
+                    odds_text = cells[4].get_text(strip=True) if len(cells) > 4 else "0"
+                    odds   = safe_float(re.sub(r'[^0-9.]', '', odds_text))
+                    prob   = 0
+                    tournament = ""
+                    start_time = ""
 
-                # Szűrés
                 if ov >= min_ov and min_odds <= odds <= max_odds:
-                    bets.append(bet)
+                    bets.append({
+                        "overvalue":   ov,
+                        "event":       event,
+                        "market":      market,
+                        "odds":        odds,
+                        "probability": prob,
+                        "time":        start_time,
+                        "tournament":  tournament,
+                    })
 
             except Exception as e:
+                st.session_state.log.append(f"⚠️ Sor hiba: {e}")
                 continue
 
         st.session_state.log.append(f"✅ Szűrés után: {len(bets)} bet")
