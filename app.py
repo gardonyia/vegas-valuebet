@@ -33,6 +33,13 @@ if "log"         not in st.session_state: st.session_state.log         = []
 
 # ── Segédfüggvények ───────────────────────────────────────
 
+def safe_float(val) -> float:
+    try:
+        return float(str(val).replace(",", ".").strip())
+    except (ValueError, TypeError):
+        return 0.0
+
+
 def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
     from bs4 import BeautifulSoup
     import re, json, html
