@@ -69,6 +69,8 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
                 if comb_el:
                     raw = html.unescape(comb_el["data-comb-json"])
                     data = json.loads(raw)
+                    if isinstance(data, str):
+                        data = json.loads(data)
                     prongs = data.get("prongs", [{}])
                     p = prongs[0] if prongs else {}
                     teams = data.get("teams", [])
