@@ -45,11 +45,24 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
     try:
         r = requests.get(SUREBET_URL, params=params,
                          cookies=COOKIES, headers=HEADERS, timeout=15)
+        st.session_state.log.append(f"🌐 HTTP válasz: {r.status_code} | {r.text[:200]}")
         if r.status_code == 200:
             data = r.json()
-            return data.get("valuebets", data) if isinstance(data, dict) else data
+            # Különböző JSON struktúrák kezelése
+            if isinstance(data, list):
+                return data
+            elif isinstance(data, dict):
+                # Megkeressük az első lista értéket
+                for key in ["valuebets", "bets", "items", "data", "results"]:
+                    if key in data and isinstance(data[key], list):
+                        return data[key]
+                # Ha semmi nem illik, visszaadjuk üresen és logoljuk
+                st.session_state.log.append(f"⚠️ Ismeretlen struktúra: {list(data.keys())}")
+                return []
+            else:
+                return []
         else:
-            st.session_state.log.append(f"⚠️ HTTP {r.status_code} – {r.text[:120]}")
+            st.session_state.log.append(f"⚠️ HTTP {r.status_code} – {r.text[:200]}")
             return []
     except Exception as e:
         st.session_state.log.append(f"❌ Lekérési hiba: {e}")
