@@ -74,8 +74,14 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
                     # Debug: első sor struktúráját logoljuk
                     if len(bets) == 0 and len(rows) > 1:
                         st.session_state.log.append(f"🔍 JSON típus: {type(data).__name__} | tartalom: {str(data)[:300]}")
-                    prongs = data.get("prongs", [{}])
+                    prongs = data.get("prongs", [])
                     p = prongs[0] if prongs else {}
+                    # Ha a prong elem string, parse-oljuk
+                    if isinstance(p, str):
+                        try:
+                            p = json.loads(p)
+                        except Exception:
+                            p = {}
                     teams = data.get("teams", [])
                     event = " – ".join(teams) if teams else str(data.get("synonym_id", ""))
                     market = p.get("market_name", p.get("market", ""))
