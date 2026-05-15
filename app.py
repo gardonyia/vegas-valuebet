@@ -84,10 +84,20 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
                             p = {}
                     teams = data.get("teams", [])
                     event = " – ".join(teams) if teams else str(data.get("synonym_id", ""))
-                    # Debug: első prong tartalmát logoljuk
-                    if len(bets) == 0:
-                        st.session_state.log.append(f"🔍 prong kulcsok: {list(p.keys()) if isinstance(p, dict) else str(p)[:200]}")
-                    market = p.get("market_name", p.get("market", p.get("type", p.get("name", ""))))
+
+                    # Market összerakása a dict mezőkből
+                    mkt = p.get("market", {})
+                    if isinstance(mkt, dict):
+                        variety  = mkt.get("variety", "")
+                        base     = mkt.get("base", "")
+                        type_    = mkt.get("type", "")
+                        cond     = mkt.get("condition", "")
+                        parts = [x for x in [variety, base, type_, cond] if x]
+                        market = " / ".join(parts) if parts else str(mkt)
+                    elif isinstance(mkt, str) and mkt:
+                        market = mkt
+                    else:
+                        market = p.get("market_name", p.get("type", p.get("name", "–")))
                     # initial_value lehet dict {"datetime":..., "value":1.87} vagy szám
                     iv = p.get("initial_value", p.get("value", 0))
                     if isinstance(iv, dict):
@@ -96,6 +106,7 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
                         odds = safe_float(iv)
                     prob = round(1 / odds * 100, 1) if odds > 0 else 0
                     tournament = data.get("tournament", "")
+                    bet_uid = str(data.get("id", bet_id({"event": event, "market": market, "odds": odds})))
                     start_time = ""
                     iv2 = p.get("initial_value", {})
                     if isinstance(iv2, dict):
@@ -115,6 +126,7 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
 
                 if ov >= min_ov and min_odds <= odds <= max_odds:
                     bets.append({
+                        "uid":         bet_uid if comb_el else bet_id({"event": event, "market": market, "odds": odds}),
                         "overvalue":   ov,
                         "event":       event,
                         "market":      market,
@@ -162,11 +174,18 @@ def format_msg(bet: dict) -> str:
     event = bet.get("event", "–")
     mkt   = bet.get("market", "–")
     start = bet.get("time", "–")
+    tournament = bet.get("tournament", "")
     emoji = "🔥🔥🔥" if ov >= 20 else ("🔥🔥" if ov >= 10 else "🔥")
+
+    # Vegas.hu keresőlink a csapatnevekből
+    search_query = event.replace(" – ", " ").replace(" ", "+")
+    vegas_link = f"https://vegas.hu/search?q={search_query}"
+
     return (
         f"{emoji} *VEGAS.HU VALUEBET*\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"🏟 *Esemény:* {event}\n"
+        f"🏆 *Bajnokság:* {tournament}\n"
         f"📊 *Piac:* {mkt}\n"
         f"⏰ *Kezdés:* {start}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -174,7 +193,7 @@ def format_msg(bet: dict) -> str:
         f"📈 *Overvalue:* `+{ov}%`\n"
         f"🎯 *Valószínűség:* `{prob}%`\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"🔗 [Vegas.hu](https://vegas.hu)\n"
+        f"🔗 [Megnyitás Vegas.hu-n]({vegas_link})\n"
         f"_{datetime.now().strftime('%H:%M:%S')}_"
     )
 
@@ -247,7 +266,7 @@ if st.session_state.running:
 
     new_count = 0
     for bet in bets:
-        uid = bet_id(bet)
+        uid = bet.get("uid", bet_id(bet))
         if uid not in st.session_state.sent_ids:
             if send_telegram(format_msg(bet)):
                 st.session_state.sent_ids.add(uid)
