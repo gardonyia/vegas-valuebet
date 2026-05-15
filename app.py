@@ -71,6 +71,9 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
                     data = json.loads(raw)
                     if isinstance(data, str):
                         data = json.loads(data)
+                    # Debug: első sor struktúráját logoljuk
+                    if len(bets) == 0 and len(rows) > 1:
+                        st.session_state.log.append(f"🔍 JSON típus: {type(data).__name__} | tartalom: {str(data)[:300]}")
                     prongs = data.get("prongs", [{}])
                     p = prongs[0] if prongs else {}
                     teams = data.get("teams", [])
