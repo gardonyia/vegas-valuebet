@@ -77,12 +77,20 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
                     prongs = data.get("prongs", [{}])
                     p = prongs[0] if prongs else {}
                     teams = data.get("teams", [])
-                    event = " – ".join(teams) if teams else data.get("synonym_id", "")
+                    event = " – ".join(teams) if teams else str(data.get("synonym_id", ""))
                     market = p.get("market_name", p.get("market", ""))
-                    odds = safe_float(p.get("value", p.get("initial_value", 0)))
+                    # initial_value lehet dict {"datetime":..., "value":1.87} vagy szám
+                    iv = p.get("initial_value", p.get("value", 0))
+                    if isinstance(iv, dict):
+                        odds = safe_float(iv.get("value", 0))
+                    else:
+                        odds = safe_float(iv)
                     prob = round(1 / odds * 100, 1) if odds > 0 else 0
                     tournament = data.get("tournament", "")
-                    start_time = data.get("datetime", "")[:16] if data.get("datetime") else ""
+                    start_time = ""
+                    iv2 = p.get("initial_value", {})
+                    if isinstance(iv2, dict):
+                        start_time = iv2.get("datetime", "")[:16]
                 else:
                     # Fallback: cellákból
                     cells = row.find_all("td")
