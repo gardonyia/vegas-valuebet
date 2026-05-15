@@ -84,7 +84,10 @@ def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
                             p = {}
                     teams = data.get("teams", [])
                     event = " – ".join(teams) if teams else str(data.get("synonym_id", ""))
-                    market = p.get("market_name", p.get("market", ""))
+                    # Debug: első prong tartalmát logoljuk
+                    if len(bets) == 0:
+                        st.session_state.log.append(f"🔍 prong kulcsok: {list(p.keys()) if isinstance(p, dict) else str(p)[:200]}")
+                    market = p.get("market_name", p.get("market", p.get("type", p.get("name", ""))))
                     # initial_value lehet dict {"datetime":..., "value":1.87} vagy szám
                     iv = p.get("initial_value", p.get("value", 0))
                     if isinstance(iv, dict):
