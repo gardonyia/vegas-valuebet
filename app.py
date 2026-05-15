@@ -10,7 +10,7 @@ REMEMBER_TOKEN = st.secrets["REMEMBER_TOKEN"]
 SSTOKEN        = st.secrets["SSTOKEN"]
 STOKEN         = st.secrets["STOKEN"]
 
-SUREBET_URL = "https://en.surebet.com/valuebets.json"
+SUREBET_URL = "https://en.surebet.com/by/bookie/vegas/valuebets"
 
 COOKIES = {
     "remember_user_token": REMEMBER_TOKEN,
@@ -19,10 +19,9 @@ COOKIES = {
 }
 
 HEADERS = {
-    "User-Agent":  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept":      "application/json, text/javascript, */*",
-    "Referer":     "https://en.surebet.com/valuebets",
-    "X-Requested-With": "XMLHttpRequest",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept":     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Referer":    "https://en.surebet.com/valuebets",
 }
 
 # ── Állapot ───────────────────────────────────────────────
@@ -35,35 +34,77 @@ if "log"         not in st.session_state: st.session_state.log         = []
 # ── Segédfüggvények ───────────────────────────────────────
 
 def fetch_valuebets(min_ov: float, min_odds: float, max_odds: float) -> list:
-    params = {
-        "source":        "vegas",
-        "min-overvalue": min_ov,
-        "min-odds":      min_odds,
-        "max-odds":      max_odds,
-        "limit":         200,
-    }
+    from bs4 import BeautifulSoup
+    import re
     try:
-        r = requests.get(SUREBET_URL, params=params,
-                         cookies=COOKIES, headers=HEADERS, timeout=15)
-        st.session_state.log.append(f"🌐 HTTP válasz: {r.status_code} | {r.text[:200]}")
-        if r.status_code == 200:
-            data = r.json()
-            # Különböző JSON struktúrák kezelése
-            if isinstance(data, list):
-                return data
-            elif isinstance(data, dict):
-                # Megkeressük az első lista értéket
-                for key in ["valuebets", "bets", "items", "data", "results"]:
-                    if key in data and isinstance(data[key], list):
-                        return data[key]
-                # Ha semmi nem illik, visszaadjuk üresen és logoljuk
-                st.session_state.log.append(f"⚠️ Ismeretlen struktúra: {list(data.keys())}")
-                return []
-            else:
-                return []
-        else:
-            st.session_state.log.append(f"⚠️ HTTP {r.status_code} – {r.text[:200]}")
+        r = requests.get(SUREBET_URL, cookies=COOKIES, headers=HEADERS, timeout=15)
+        st.session_state.log.append(f"🌐 HTTP: {r.status_code} | méret: {len(r.text)} karakter")
+        if r.status_code != 200:
+            st.session_state.log.append(f"⚠️ Hiba: {r.text[:200]}")
             return []
+
+        soup = BeautifulSoup(r.text, "html.parser")
+        bets = []
+
+        # Minden sor a táblázatban
+        rows = soup.select("tr.vb-row, tr[data-id], tbody tr")
+        st.session_state.log.append(f"📋 Talált sorok: {len(rows)}")
+
+        for row in rows:
+            try:
+                cells = row.find_all("td")
+                if len(cells) < 4:
+                    continue
+
+                # Overvalue kinyerése
+                ov_cell = row.select_one(".overvalue, [class*='overvalue'], td:first-child")
+                ov_text = ov_cell.get_text(strip=True) if ov_cell else cells[0].get_text(strip=True)
+                ov = safe_float(re.sub(r'[^0-9.]', '', ov_text))
+
+                # Esemény
+                event_cell = row.select_one(".event, [class*='event'], td:nth-child(3)")
+                event = event_cell.get_text(strip=True) if event_cell else cells[2].get_text(strip=True) if len(cells) > 2 else ""
+
+                # Piac
+                market_cell = row.select_one(".market, [class*='market'], td:nth-child(4)")
+                market = market_cell.get_text(strip=True) if market_cell else cells[3].get_text(strip=True) if len(cells) > 3 else ""
+
+                # Odds
+                odds_cell = row.select_one(".odds, [class*='odds'], td:nth-child(5)")
+                odds_text = odds_cell.get_text(strip=True) if odds_cell else cells[4].get_text(strip=True) if len(cells) > 4 else "0"
+                odds = safe_float(re.sub(r'[^0-9.]', '', odds_text))
+
+                # Valószínűség
+                prob_cell = row.select_one(".probability, [class*='prob'], td:nth-child(6)")
+                prob_text = prob_cell.get_text(strip=True) if prob_cell else cells[5].get_text(strip=True) if len(cells) > 5 else "0"
+                prob = safe_float(re.sub(r'[^0-9.]', '', prob_text))
+
+                # Időpont
+                time_cell = row.select_one(".time, [class*='time'], td:nth-child(2)")
+                start_time = time_cell.get_text(strip=True) if time_cell else ""
+
+                if ov == 0 and odds == 0:
+                    continue
+
+                bet = {
+                    "overvalue":   ov,
+                    "event":       event[:80],
+                    "market":      market[:60],
+                    "odds":        odds,
+                    "probability": prob,
+                    "time":        start_time,
+                }
+
+                # Szűrés
+                if ov >= min_ov and min_odds <= odds <= max_odds:
+                    bets.append(bet)
+
+            except Exception as e:
+                continue
+
+        st.session_state.log.append(f"✅ Szűrés után: {len(bets)} bet")
+        return bets
+
     except Exception as e:
         st.session_state.log.append(f"❌ Lekérési hiba: {e}")
         return []
